@@ -1,4 +1,4 @@
-import type { ThreadPullRequestWatch } from "@t3tools/contracts";
+import { SourceControlProviderKind, type ThreadPullRequestWatch } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 import {
@@ -30,6 +30,7 @@ describe("Forgejo comment watch boundary", () => {
     wakes: 2,
   } satisfies ThreadPullRequestWatch;
   const finalDetail = {
+    provider: SourceControlProviderKind.make("forgejo"),
     headSha: seen.headSha,
     checks: [],
     mergeability: "mergeable",

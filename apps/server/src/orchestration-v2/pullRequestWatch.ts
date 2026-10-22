@@ -12,7 +12,7 @@ import * as DateTime from "effect/DateTime";
  * this only stops a chatty bot looping an agent that is replying to it.
  */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
-/** Checks usually register within a minute of a push, so a head still without any is news. */
+/** How long a GitHub head may go without any check before the agent is told none reported. */
 export const PULL_REQUEST_WATCH_NO_CHECKS_MS = 15 * 60_000;
 const LISTED_ITEMS = 10;
 const SNIPPET_LENGTH = 200;
@@ -36,7 +36,10 @@ const isFailedCheck = (check: PullRequestCheck) =>
 
 export function evaluatePullRequestWatch(
   watch: ThreadPullRequestWatch,
-  detail: Pick<PullRequestDetail, "headSha" | "checks" | "mergeability" | "viewer" | "author">,
+  detail: Pick<
+    PullRequestDetail,
+    "provider" | "headSha" | "checks" | "mergeability" | "viewer" | "author"
+  >,
   remarks: ReadonlyArray<PullRequestComment> | null,
   now: number,
 ): PullRequestWatchReport {
@@ -70,20 +73,20 @@ export function evaluatePullRequestWatch(
   }
 
   // Only a head never read with checks waits for them: an empty read after checks were seen is
-  // the failed read above. Watches saved before this field fall back to what they recorded.
-  const nowIso = DateTime.formatIso(DateTime.makeUnsafe(now));
-  const awaitedBefore = headMoved
-    ? nowIso
-    : watch.checksAwaitedSince !== undefined
-      ? watch.checksAwaitedSince
-      : watch.passed || watch.failedChecks.length > 0
-        ? null
-        : nowIso;
-  let checksAwaitedSince = detail.checks.length > 0 ? null : awaitedBefore;
-  const awaitedMs = checksAwaitedSince === null ? 0 : now - Date.parse(checksAwaitedSince);
-  if (awaitedMs >= PULL_REQUEST_WATCH_NO_CHECKS_MS) {
-    changes.push({ kind: "no-checks", minutes: Math.round(awaitedMs / 60_000) });
-    checksAwaitedSince = null;
+  // the failed read above. A watch saved before this field may have seen pending checks on its
+  // head, so its clock starts only at the next push. Other hosts can lack a checks API (Azure
+  // DevOps pipelines), where an empty list says nothing, so only GitHub waits.
+  let checksAwaitedSince = watch.checksAwaitedSince;
+  if (detail.provider === "github") {
+    const awaitedBefore = headMoved
+      ? DateTime.formatIso(DateTime.makeUnsafe(now))
+      : (watch.checksAwaitedSince ?? null);
+    checksAwaitedSince = detail.checks.length > 0 ? null : awaitedBefore;
+    const awaitedMs = checksAwaitedSince === null ? 0 : now - Date.parse(checksAwaitedSince);
+    if (awaitedMs >= PULL_REQUEST_WATCH_NO_CHECKS_MS) {
+      changes.push({ kind: "no-checks", minutes: Math.round(awaitedMs / 60_000) });
+      checksAwaitedSince = null;
+    }
   }
 
   const own = (detail.viewer ?? detail.author?.login)?.toLowerCase();
