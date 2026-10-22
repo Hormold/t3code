@@ -14,6 +14,7 @@ import {
   BotIcon,
   createLucideIcon,
   CalendarClockIcon,
+  Gamepad2Icon,
   GitBranchIcon,
   HardDriveIcon,
   PanelsTopLeftIcon,
@@ -49,6 +50,7 @@ import {
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
+import { useCodexMicroConnected } from "../../codexMicro/codexMicroStore";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -84,6 +86,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
   "/settings/integrations": BlocksIcon,
+  "/settings/codex-micro": Gamepad2Icon,
   "/settings/scheduled-tasks": CalendarClockIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/storage": HardDriveIcon,
@@ -114,8 +117,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = validateSettingsScopeSearch(currentSearch);
+  const codexMicroConnected = useCodexMicroConnected();
   const navItems = SETTINGS_NAV_ITEMS.filter(
-    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
+    (item) =>
+      (item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch)) &&
+      (item.to !== "/settings/codex-micro" || codexMicroConnected),
   );
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
