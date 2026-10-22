@@ -13,7 +13,7 @@ import * as DateTime from "effect/DateTime";
  */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
 /** How long a GitHub head may go without any check before the agent is told none reported. */
-export const PULL_REQUEST_WATCH_NO_CHECKS_MS = 15 * 60_000;
+const PULL_REQUEST_WATCH_NO_CHECKS_MS = 15 * 60_000;
 const LISTED_ITEMS = 10;
 const SNIPPET_LENGTH = 200;
 
