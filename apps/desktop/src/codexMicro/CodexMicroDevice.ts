@@ -5,7 +5,7 @@ import * as Random from "effect/Random";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { devices as listHidDevices, HIDAsync } from "node-hid";
+import { devicesAsync as listHidDevices, HIDAsync } from "node-hid";
 
 import {
   DISCONNECTED_CODEX_MICRO_STATE,
@@ -35,18 +35,28 @@ export class CodexMicroError extends Schema.TaggedError<CodexMicroError>()("Code
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 export interface CodexMicroDevice {
   readonly getState: Effect.Effect<CodexMicroDeviceState>;
   readonly setLighting: (lighting: CodexMicroLighting) => Effect.Effect<void>;
 }
 
-const findDevicePath = (): string | null =>
-  listHidDevices().find(
-    (device) =>
-      device.vendorId === WORK_LOUDER_VENDOR_ID &&
-      device.productId === CODEX_MICRO_PRODUCT_ID &&
-      device.usagePage === VENDOR_USAGE_PAGE,
-  )?.path ?? null;
+// Enumeration is async so polling never blocks the main process.
+const findDevicePath = Effect.tryPromise({
+  try: () => listHidDevices(),
+  catch: (cause) => new CodexMicroError({ message: "Could not list HID devices", cause }),
+}).pipe(
+  Effect.map(
+    (devices) =>
+      devices.find(
+        (device) =>
+          device.vendorId === WORK_LOUDER_VENDOR_ID &&
+          device.productId === CODEX_MICRO_PRODUCT_ID &&
+          device.usagePage === VENDOR_USAGE_PAGE,
+      )?.path ?? null,
+  ),
+);
 
 /**
  * Owns one Codex Micro for the lifetime of the scope: discovery, reconnects,
@@ -98,8 +108,21 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
   });
 
   // A short cooldown between requests keeps the firmware's parser happy.
+  // A handle can go dead without a read error (sleep/wake, a dropped Bluetooth
+  // link). Treat a run of failed requests as a disconnect so discovery reopens it.
+  let consecutiveFailures = 0;
   const call = (method: string, params: unknown) =>
-    rpcLock.withPermits(1)(send(method, params).pipe(Effect.tap(() => Effect.sleep("15 millis"))));
+    rpcLock.withPermits(1)(
+      send(method, params).pipe(
+        Effect.tap(() => Effect.sync(() => (consecutiveFailures = 0))),
+        Effect.tapError(() =>
+          Effect.suspend(() =>
+            ++consecutiveFailures >= MAX_CONSECUTIVE_FAILURES ? disconnect : Effect.void,
+          ),
+        ),
+        Effect.ensuring(Effect.sleep("15 millis")),
+      ),
+    );
 
   const applyLighting = Effect.gen(function* () {
     if (!hid || !lighting) return;
@@ -164,8 +187,9 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
     }
   };
 
-  const disconnect = Effect.gen(function* () {
+  const disconnect: Effect.Effect<void> = Effect.gen(function* () {
     const device = hid;
+    consecutiveFailures = 0;
     hid = null;
     lines.reset();
     for (const response of pending.values()) {
@@ -208,13 +232,22 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
   });
 
   // Poll for the device while disconnected; refresh battery while connected.
+  // A failing open (usually missing Input Monitoring permission) is logged once
+  // per distinct error rather than on every poll.
+  let lastConnectError: string | null = null;
   yield* Effect.gen(function* () {
     if (hid) return;
-    const path = findDevicePath();
-    if (path) yield* connect(path);
+    const path = yield* findDevicePath;
+    if (!path) return;
+    yield* connect(path);
+    lastConnectError = null;
   }).pipe(
-    // Usually missing Input Monitoring permission or another app holding the device.
-    Effect.catch((error) => Effect.logWarning("Codex Micro connection failed", error)),
+    Effect.catch((error) => {
+      const message = String(error.cause ?? error.message);
+      if (message === lastConnectError) return Effect.void;
+      lastConnectError = message;
+      return Effect.logWarning("Codex Micro connection failed", error);
+    }),
     Effect.repeat(Schedule.spaced("2 seconds")),
     Effect.forkScoped,
   );
@@ -225,9 +258,12 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       if (dimFiber) yield* Fiber.interrupt(dimFiber);
-      // Leave the device dark rather than frozen on stale thread states.
+      // Leave the device dark rather than frozen on stale thread states, but
+      // never hold up quitting on an unresponsive device.
       lightsOff = true;
-      yield* applyLighting;
+      yield* applyLighting.pipe(
+        Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.void }),
+      );
       yield* disconnect;
     }),
   );

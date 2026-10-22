@@ -1,5 +1,5 @@
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { KeybindingCommand } from "./keybindings.ts";
 
@@ -47,7 +47,7 @@ export const CodexMicroAction = Schema.Union([
   Schema.Struct({ type: Schema.Literal("stop") }),
   Schema.Struct({ type: Schema.Literal("nextSlot") }),
   Schema.Struct({ type: Schema.Literal("previousSlot") }),
-  Schema.Struct({ type: Schema.Literal("openSelected") }),
+  Schema.Struct({ type: Schema.Literal("focusApp") }),
   Schema.Struct({ type: Schema.Literal("command"), command: KeybindingCommand }),
 ]);
 export type CodexMicroAction = typeof CodexMicroAction.Type;
@@ -67,7 +67,7 @@ export const DEFAULT_CODEX_MICRO_CONTROLS: Readonly<Record<CodexMicroControlId, 
     ACT10: { type: "command", command: "terminal.toggle" },
     ACT11: { type: "command", command: "diff.toggle" },
     ACT12: { type: "command", command: "commandPalette.toggle" },
-    ENC: { type: "openSelected" },
+    ENC: { type: "focusApp" },
     ENC_CW: { type: "nextSlot" },
     ENC_CC: { type: "previousSlot" },
     JOY_UP: { type: "command", command: "thread.previous" },
@@ -81,24 +81,92 @@ const AutoDimMs = Schema.NullOr(
   Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 24 * 60 * 60_000 })),
 );
 
-export const CodexMicroSettings = Schema.Struct({
-  agentMode: CodexMicroAgentMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("priority" as const)),
-  ),
-  knobMode: CodexMicroKnobMode.pipe(Schema.withDecodingDefault(Effect.succeed("agents" as const))),
+const CodexMicroSettingsValue = Schema.Struct({
+  agentMode: CodexMicroAgentMode,
+  knobMode: CodexMicroKnobMode,
   /** One wide keycap covers ACT10 + ACT11; when false only ACT10 is used. */
-  separateMicrophoneKeys: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  separateMicrophoneKeys: Schema.Boolean,
+  /** Bring T3 Code forward on a single agent-key tap instead of a double tap. */
+  singleTapFocus: Schema.Boolean,
   /** Thread ids pinned to agent keys 1–6 (null = follow `agentMode`). */
-  pinnedThreads: Schema.Array(Schema.NullOr(Schema.String)).pipe(
-    Schema.withDecodingDefault(Effect.succeed([null, null, null, null, null, null])),
-  ),
-  controls: Schema.Record(CodexMicroControlId, CodexMicroAction).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_MICRO_CONTROLS)),
-  ),
-  brightness: Brightness.pipe(Schema.withDecodingDefault(Effect.succeed(0.8))),
-  autoDimMs: AutoDimMs.pipe(Schema.withDecodingDefault(Effect.succeed(600_000))),
-  keysBacklight: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  pinnedThreads: Schema.Array(Schema.NullOr(Schema.String)),
+  controls: Schema.Record(CodexMicroControlId, CodexMicroAction),
+  brightness: Brightness,
+  autoDimMs: AutoDimMs,
+  keysBacklight: Schema.Boolean,
 });
+type CodexMicroSettingsValue = typeof CodexMicroSettingsValue.Type;
+
+export const DEFAULT_CODEX_MICRO_SETTINGS: CodexMicroSettingsValue = {
+  agentMode: "priority",
+  knobMode: "agents",
+  separateMicrophoneKeys: false,
+  singleTapFocus: false,
+  pinnedThreads: [null, null, null, null, null, null],
+  controls: DEFAULT_CODEX_MICRO_CONTROLS,
+  brightness: 0.8,
+  autoDimMs: 600_000,
+  keysBacklight: false,
+};
+
+const decodeField = <S extends Schema.Top>(schema: S) =>
+  Schema.decodeUnknownOption(schema as never);
+const FIELD_DECODERS = {
+  agentMode: decodeField(CodexMicroAgentMode),
+  knobMode: decodeField(CodexMicroKnobMode),
+  separateMicrophoneKeys: decodeField(Schema.Boolean),
+  singleTapFocus: decodeField(Schema.Boolean),
+  pinnedThreads: decodeField(Schema.Array(Schema.NullOr(Schema.String))),
+  brightness: decodeField(Brightness),
+  autoDimMs: decodeField(AutoDimMs),
+  keysBacklight: decodeField(Schema.Boolean),
+};
+const decodeAction = Schema.decodeUnknownOption(CodexMicroAction);
+
+/**
+ * Stored settings outlive the code that wrote them: a control or keybinding
+ * command can be renamed or removed. Each field falls back to its default on
+ * its own, so one stale value never invalidates the rest of the client settings.
+ */
+function sanitizeCodexMicroSettings(raw: unknown): CodexMicroSettingsValue {
+  const input = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const pick = <K extends keyof typeof FIELD_DECODERS>(key: K): CodexMicroSettingsValue[K] => {
+    const decoded = FIELD_DECODERS[key](input[key]);
+    return (
+      decoded._tag === "Some" ? decoded.value : DEFAULT_CODEX_MICRO_SETTINGS[key]
+    ) as CodexMicroSettingsValue[K];
+  };
+  const storedControls =
+    typeof input.controls === "object" && input.controls !== null
+      ? (input.controls as Record<string, unknown>)
+      : {};
+  const controls = { ...DEFAULT_CODEX_MICRO_CONTROLS };
+  for (const id of CodexMicroControlId.literals) {
+    const action = decodeAction(storedControls[id]);
+    if (action._tag === "Some") controls[id] = action.value;
+  }
+  return {
+    agentMode: pick("agentMode"),
+    knobMode: pick("knobMode"),
+    separateMicrophoneKeys: pick("separateMicrophoneKeys"),
+    singleTapFocus: pick("singleTapFocus"),
+    pinnedThreads: pick("pinnedThreads"),
+    controls,
+    brightness: pick("brightness"),
+    autoDimMs: pick("autoDimMs"),
+    keysBacklight: pick("keysBacklight"),
+  };
+}
+
+export const CodexMicroSettings = Schema.Unknown.pipe(
+  Schema.decodeTo(
+    CodexMicroSettingsValue,
+    SchemaTransformation.transform<typeof CodexMicroSettingsValue.Encoded, unknown>({
+      decode: sanitizeCodexMicroSettings,
+      encode: (settings) => settings,
+    }),
+  ),
+);
 export type CodexMicroSettings = typeof CodexMicroSettings.Type;
 
 export const CodexMicroDeviceState = Schema.Struct({

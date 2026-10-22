@@ -53,9 +53,9 @@ const DEVICE_ACTION_LABELS = {
   approveForSession: "Approve for session",
   decline: "Decline",
   stop: "Stop thread",
-  nextSlot: "Select next agent key",
-  previousSlot: "Select previous agent key",
-  openSelected: "Open selected agent key",
+  nextSlot: "Open next agent key",
+  previousSlot: "Open previous agent key",
+  focusApp: "Bring T3 Code forward",
 } as const satisfies Record<Exclude<CodexMicroAction["type"], "command">, string>;
 
 const option = (action: CodexMicroAction): CodexMicroActionOption => ({
@@ -82,9 +82,7 @@ export const CODEX_MICRO_ACTION_GROUPS: ReadonlyArray<CodexMicroActionGroup> = [
   },
   {
     title: "Agent keys",
-    options: (["nextSlot", "previousSlot", "openSelected"] as const).map((type) =>
-      option({ type }),
-    ),
+    options: (["nextSlot", "previousSlot", "focusApp"] as const).map((type) => option({ type })),
   },
   {
     title: "Commands",
@@ -113,7 +111,7 @@ const KNOB_PRESETS: Record<
   agents: {
     ENC_CW: { type: "nextSlot" },
     ENC_CC: { type: "previousSlot" },
-    ENC: { type: "openSelected" },
+    ENC: { type: "focusApp" },
   },
   threads: {
     ENC_CW: { type: "command", command: "thread.next" },

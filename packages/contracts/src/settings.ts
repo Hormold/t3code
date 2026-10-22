@@ -22,7 +22,7 @@ import {
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { KeybindingShortcut } from "./keybindings.ts";
-import { CodexMicroSettings } from "./codexMicro.ts";
+import { CodexMicroSettings, DEFAULT_CODEX_MICRO_SETTINGS } from "./codexMicro.ts";
 import {
   CustomModelSetting,
   DEFAULT_TEXT_GENERATION_MODEL,
@@ -481,7 +481,7 @@ export const ClientSettingsSchema = Schema.Struct({
   snapShotFlash: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   snapShotAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   codexMicro: CodexMicroSettings.pipe(
-    Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(CodexMicroSettings)({}))),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_MICRO_SETTINGS)),
   ),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Opt-in TeX typesetting in rendered Markdown. Off keeps math parsing and
