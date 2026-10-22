@@ -448,8 +448,13 @@ function codexBackgroundCommandDetail(item: {
   return outputTail.length === 0 ? header : `${header}\n\nOutput tail:\n${outputTail}`;
 }
 
+// Codex spawns can omit the prompt, which registers as an empty string.
+function codexNativeSubagentLabel(task: OrchestrationV2Subagent): string | undefined {
+  return task.title?.trim() || task.prompt.trim() || undefined;
+}
+
 function codexNativeSubagentDetail(task: OrchestrationV2Subagent): string {
-  const header = `Subagent ${task.status}: ${task.title ?? task.prompt ?? task.id}`;
+  const header = `Subagent ${task.status}: ${codexNativeSubagentLabel(task) ?? task.id}`;
   return task.result == null || task.result.length === 0
     ? header
     : `${header}\n\nResult:\n${task.result}`;
@@ -6088,7 +6093,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     notification: backgroundWorkNotification([
                       {
                         kind: "subagent",
-                        label: task.title ?? task.prompt,
+                        label: codexNativeSubagentLabel(task),
                         outcome: input.status,
                         childThreadId: input.context.subagent.childThreadId,
                       },
