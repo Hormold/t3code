@@ -1260,12 +1260,6 @@ const approvalOwnerCodexTurn = (
   return { owner, subagent };
 };
 
-const codexRootTurn = (context: ActiveCodexTurnContext): ActiveCodexTurnContext => {
-  let root = context;
-  while (root.subagent !== null) root = root.subagent.parentContext;
-  return root;
-};
-
 const isDescendantCodexTurn = (
   candidate: ActiveCodexTurnContext,
   ancestor: ActiveCodexTurnContext,
@@ -6068,21 +6062,29 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 });
                 // Codex does not wake a parent whose turn already completed, so
                 // the child's result would sit unread until the next message.
-                // Only the parent can start a native child turn, so any child
-                // turn ending after its root completed is one the root left.
-                const root = codexRootTurn(input.context);
+                // Only direct children of a root turn wake it: a grandchild
+                // reports to its own parent, and a root turn already running on
+                // the thread receives the result natively.
+                const parent = input.context.subagent.parentContext;
                 if (
                   continuationRequests !== undefined &&
+                  parent.subagent === null &&
                   (input.status === "completed" || input.status === "failed") &&
-                  !(yield* Ref.get(activeTurns)).has(root.nativeTurnId) &&
-                  !(yield* Ref.get(terminalizedNonCompletedNativeTurns)).has(root.nativeTurnId)
+                  !(yield* Ref.get(terminalizedNonCompletedNativeTurns)).has(parent.nativeTurnId) &&
+                  ![...(yield* Ref.get(activeTurns)).values()].some(
+                    (active) =>
+                      active.subagent === null &&
+                      active.providerThread.id === parent.providerThread.id,
+                  )
                 ) {
                   const task = input.context.subagent.task;
                   yield* continuationRequests.offer({
-                    threadId: root.projectionThreadId,
-                    providerThreadId: root.providerThread.id,
+                    threadId: parent.projectionThreadId,
+                    providerThreadId: parent.providerThread.id,
                     driver: CODEX_PROVIDER,
                     detail: codexNativeSubagentDetail(task),
+                    // The detail is the whole wake; Codex buffers no output for it.
+                    delivery: "message_text",
                     notification: backgroundWorkNotification([
                       {
                         kind: "subagent",
