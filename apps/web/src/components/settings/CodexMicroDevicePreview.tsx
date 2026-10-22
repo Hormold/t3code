@@ -4,6 +4,7 @@ import {
   type CodexMicroControlId,
 } from "@t3tools/contracts";
 import {
+  AppWindowIcon,
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -14,7 +15,6 @@ import {
   ChevronRightIcon,
   CircleSlashIcon,
   CommandIcon,
-  ExternalLinkIcon,
   GitCompareIcon,
   KeyboardIcon,
   PanelLeftIcon,
@@ -61,8 +61,8 @@ export function CodexMicroActionIcon(props: {
       return <ArrowRightIcon className={className} />;
     case "previousSlot":
       return <ArrowLeftIcon className={className} />;
-    case "openSelected":
-      return <ExternalLinkIcon className={className} />;
+    case "focusApp":
+      return <AppWindowIcon className={className} />;
     case "none":
       return <CircleSlashIcon className={className} />;
     case "command":
@@ -162,10 +162,7 @@ export function CodexMicroDevicePreview(props: PreviewProps) {
         />
         <span className="absolute inset-0 overflow-hidden rounded-xl border border-white/80 bg-white/45 shadow-micro-agent dark:border-white/15 dark:bg-white/10">
           <span
-            className={cn(
-              "absolute inset-0 transition-[background-color,opacity] duration-200",
-              (status === "working" || status === "needs-input") && "animate-pulse",
-            )}
+            className="absolute inset-0 transition-[background-color,opacity] duration-200"
             style={tint}
           />
           <span className="absolute inset-0 bg-gradient-to-br from-white/40 via-white/10 to-transparent dark:from-white/15 dark:via-white/5" />

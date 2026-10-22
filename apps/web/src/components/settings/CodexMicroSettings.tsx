@@ -17,7 +17,11 @@ import {
   resolveCodexMicroControl,
 } from "../../codexMicro/codexMicroActions";
 import { useCodexMicroSnapshot } from "../../codexMicro/codexMicroStore";
-import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
+import {
+  getClientSettings,
+  updateClientSettings,
+  useClientSettings,
+} from "../../hooks/useSettings";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useQuietThreadShells } from "../../state/entities";
 import { Button } from "../ui/button";
@@ -117,8 +121,9 @@ function openRowMenu(id: string) {
   row?.querySelector<HTMLButtonElement>("[data-codex-micro-trigger]")?.click();
 }
 
-const save = (patch: Partial<CodexMicroSettings>, current: CodexMicroSettings) =>
-  void updateClientSettings({ codexMicro: { ...current, ...patch } });
+// Read the latest stored value so quick successive edits don't overwrite each other.
+const save = (patch: Partial<CodexMicroSettings>) =>
+  void updateClientSettings({ codexMicro: { ...getClientSettings().codexMicro, ...patch } });
 
 function OptionMenu<T>(props: {
   readonly label: string;
@@ -221,11 +226,15 @@ export function CodexMicroSettingsPanel() {
   const actionFor = (control: CodexMicroControlId) =>
     resolveCodexMicroControl(control, settings.knobMode, settings.controls);
   const setControl = (control: CodexMicroControlId, action: CodexMicroAction) =>
-    save({ controls: { ...settings.controls, [control]: action } }, settings);
+    save({ controls: { ...getClientSettings().codexMicro.controls, [control]: action } });
   const setPin = (index: number, threadId: string | null) => {
     const pinnedThreads = Array.from({ length: 6 }, (_, i) => settings.pinnedThreads[i] ?? null);
+    // A thread lives on one key at a time.
+    for (let i = 0; i < pinnedThreads.length; i += 1) {
+      if (threadId !== null && pinnedThreads[i] === threadId) pinnedThreads[i] = null;
+    }
     pinnedThreads[index] = threadId;
-    save({ pinnedThreads }, settings);
+    save({ pinnedThreads });
   };
   const controlRow = (control: CodexMicroControlId, title: ReactNode, description?: string) => (
     <SettingsRow
@@ -305,7 +314,18 @@ export function CodexMicroSettingsPanel() {
               label="Agent keys follow"
               value={settings.agentMode}
               options={AGENT_MODES}
-              onChange={(agentMode) => save({ agentMode }, settings)}
+              onChange={(agentMode) => save({ agentMode })}
+            />
+          }
+        />
+        <SettingsRow
+          title="Focus T3 Code with a single tap"
+          description="Open the thread and bring T3 Code forward with one tap instead of a double tap."
+          control={
+            <Switch
+              checked={settings.singleTapFocus}
+              aria-label="Focus T3 Code with a single tap"
+              onCheckedChange={(singleTapFocus) => save({ singleTapFocus })}
             />
           }
         />
@@ -347,9 +367,7 @@ export function CodexMicroSettingsPanel() {
             <Switch
               checked={settings.separateMicrophoneKeys}
               aria-label="Use separate microphone keys"
-              onCheckedChange={(separateMicrophoneKeys) =>
-                save({ separateMicrophoneKeys }, settings)
-              }
+              onCheckedChange={(separateMicrophoneKeys) => save({ separateMicrophoneKeys })}
             />
           }
         />
@@ -375,7 +393,7 @@ export function CodexMicroSettingsPanel() {
               label="Knob mode"
               value={settings.knobMode}
               options={KNOB_MODES}
-              onChange={(knobMode) => save({ knobMode }, settings)}
+              onChange={(knobMode) => save({ knobMode })}
             />
           }
         />
@@ -400,7 +418,7 @@ export function CodexMicroSettingsPanel() {
                   : best,
               )}
               options={BRIGHTNESS.map((value) => ({ value, label: `${Math.round(value * 100)}%` }))}
-              onChange={(brightness) => save({ brightness }, settings)}
+              onChange={(brightness) => save({ brightness })}
             />
           }
         />
@@ -412,7 +430,7 @@ export function CodexMicroSettingsPanel() {
               label="Auto-dim"
               value={settings.autoDimMs}
               options={AUTO_DIM}
-              onChange={(autoDimMs) => save({ autoDimMs }, settings)}
+              onChange={(autoDimMs) => save({ autoDimMs })}
             />
           }
         />
@@ -423,7 +441,7 @@ export function CodexMicroSettingsPanel() {
             <Switch
               checked={settings.keysBacklight}
               aria-label="Key backlight"
-              onCheckedChange={(keysBacklight) => save({ keysBacklight }, settings)}
+              onCheckedChange={(keysBacklight) => save({ keysBacklight })}
             />
           }
         />
@@ -437,9 +455,7 @@ export function CodexMicroSettingsPanel() {
             <Button
               size="xs"
               variant="outline"
-              onClick={() =>
-                save({ controls: DEFAULT_CODEX_MICRO_CONTROLS, knobMode: "agents" }, settings)
-              }
+              onClick={() => save({ controls: DEFAULT_CODEX_MICRO_CONTROLS, knobMode: "agents" })}
             >
               Reset
             </Button>

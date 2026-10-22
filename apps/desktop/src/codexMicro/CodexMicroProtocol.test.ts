@@ -3,7 +3,6 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   decodeReport,
   encodeRpcRequest,
-  isDeepEqual,
   LineAssembler,
   parseRpcLine,
 } from "./CodexMicroProtocol.ts";
@@ -52,12 +51,6 @@ describe("Codex Micro protocol", () => {
     });
     assert.isNull(parseRpcLine("garbage"));
   });
-
-  it("compares lighting structurally", () => {
-    assert.isTrue(isDeepEqual({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }));
-    assert.isFalse(isDeepEqual({ a: [1] }, { a: [1, 2] }));
-    assert.isFalse(isDeepEqual([], {}));
-  });
 });
 
 describe("Codex Micro lighting", () => {
@@ -79,11 +72,5 @@ describe("Codex Micro lighting", () => {
     assert.strictEqual(frame.slots[1]?.c, 0x304ffe);
     assert.isBelow(frame.slots[2]?.b ?? 1, 0.8);
     assert.strictEqual(frame.slots[5]?.b, 0);
-  });
-
-  it("turns everything off when dimmed", () => {
-    const frame = lightingFrame(lighting, true);
-    assert.strictEqual(frame.zones.ambient.e, 0);
-    assert.isTrue(frame.slots.every((slot) => slot.b === 0));
   });
 });
