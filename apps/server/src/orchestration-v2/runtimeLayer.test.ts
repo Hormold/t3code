@@ -2834,6 +2834,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       // An empty read on a head whose checks were seen is a failed read, not "no checks".
       headSha = "7777777777";
       checks = [{ name: "lint", status: "pending", description: null, url: null, required: true }];
+      // Without a fingerprint, a quiet pull request is read again only once the reread is due.
+      yield* TestClock.adjust("10 minutes");
       yield* reactor.sweep;
       checks = [];
       yield* anHourOfSweeps;

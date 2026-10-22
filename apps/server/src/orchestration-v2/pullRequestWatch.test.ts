@@ -5,7 +5,15 @@ import type {
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
-import { PULL_REQUEST_WATCH_WAKE_LIMIT, evaluatePullRequestWatch } from "./pullRequestWatch.ts";
+import {
+  PULL_REQUEST_WATCH_WAKE_LIMIT,
+  evaluatePullRequestWatch as evaluate,
+} from "./pullRequestWatch.ts";
+
+// These cases read the head once or at one moment, so the no-checks notice never comes due.
+const evaluatePullRequestWatch = (
+  ...args: Parameters<typeof evaluate> extends [...infer Head, number] ? Head : never
+) => evaluate(...args, 0);
 
 const STARTED = "2026-10-02T12:00:00.000Z";
 

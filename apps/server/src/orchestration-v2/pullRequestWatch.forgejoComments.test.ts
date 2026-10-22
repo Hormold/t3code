@@ -6,7 +6,12 @@ import {
   forgejoComment,
 } from "@t3tools/source-control-forgejo/server/forgejoPullRequestJson";
 
-import { evaluatePullRequestWatch } from "./pullRequestWatch.ts";
+import { evaluatePullRequestWatch as evaluate } from "./pullRequestWatch.ts";
+
+// These cases read the head once or at one moment, so the no-checks notice never comes due.
+const evaluatePullRequestWatch = (
+  ...args: Parameters<typeof evaluate> extends [...infer Head, number] ? Head : never
+) => evaluate(...args, 0);
 
 const decodeForgejoComment = Schema.decodeSync(ForgejoComment);
 

@@ -5,12 +5,15 @@ import type {
   PullRequestDetail,
   ThreadPullRequestWatch,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 /**
  * Wakes in a row that bring only comments. Check, conflict, or push news resets the count, so
  * this only stops a chatty bot looping an agent that is replying to it.
  */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
+/** Checks usually register within a minute of a push, so a head still without any is news. */
+export const PULL_REQUEST_WATCH_NO_CHECKS_MS = 15 * 60_000;
 const LISTED_ITEMS = 10;
 const SNIPPET_LENGTH = 200;
 
@@ -18,6 +21,7 @@ export type PullRequestWatchChange =
   | { readonly kind: "checks-failed"; readonly failed: ReadonlyArray<PullRequestCheck> }
   | { readonly kind: "checks-passed"; readonly count: number; readonly required: boolean }
   | { readonly kind: "remarks"; readonly remarks: ReadonlyArray<PullRequestComment> }
+  | { readonly kind: "no-checks"; readonly minutes: number }
   | { readonly kind: "conflicting" };
 
 export interface PullRequestWatchReport {
@@ -34,6 +38,7 @@ export function evaluatePullRequestWatch(
   watch: ThreadPullRequestWatch,
   detail: Pick<PullRequestDetail, "headSha" | "checks" | "mergeability" | "viewer" | "author">,
   remarks: ReadonlyArray<PullRequestComment> | null,
+  now: number,
 ): PullRequestWatchReport {
   const changes: Array<PullRequestWatchChange> = [];
   const headSha = detail.headSha ?? null;
@@ -62,6 +67,23 @@ export function evaluatePullRequestWatch(
     }
     passed = passedNow;
     passedChecks = passedNow ? gateNames : [];
+  }
+
+  // Only a head never read with checks waits for them: an empty read after checks were seen is
+  // the failed read above. Watches saved before this field fall back to what they recorded.
+  const nowIso = DateTime.formatIso(DateTime.makeUnsafe(now));
+  const awaitedBefore = headMoved
+    ? nowIso
+    : watch.checksAwaitedSince !== undefined
+      ? watch.checksAwaitedSince
+      : watch.passed || watch.failedChecks.length > 0
+        ? null
+        : nowIso;
+  let checksAwaitedSince = detail.checks.length > 0 ? null : awaitedBefore;
+  const awaitedMs = checksAwaitedSince === null ? 0 : now - Date.parse(checksAwaitedSince);
+  if (awaitedMs >= PULL_REQUEST_WATCH_NO_CHECKS_MS) {
+    changes.push({ kind: "no-checks", minutes: Math.round(awaitedMs / 60_000) });
+    checksAwaitedSince = null;
   }
 
   const own = (detail.viewer ?? detail.author?.login)?.toLowerCase();
@@ -106,6 +128,7 @@ export function evaluatePullRequestWatch(
       remarkIds,
       conflicting,
       wakes,
+      checksAwaitedSince,
     },
     exhausted: commentsOnly && wakes >= PULL_REQUEST_WATCH_WAKE_LIMIT,
   };
@@ -153,6 +176,10 @@ function changeLines(
           return `  - ${remark.author?.login ?? "someone"}${where}: ${said}${remark.url ? ` ${remark.url}` : ""}`;
         }),
       ];
+    case "no-checks":
+      return [
+        `- No checks have reported${context.commit} after ${change.minutes} minutes. None may be configured to run on this change.`,
+      ];
     case "conflicting":
       return [`- The branch now conflicts with ${context.baseBranch}.`];
   }
@@ -162,6 +189,7 @@ const SUMMARY: Record<PullRequestWatchChange["kind"], string> = {
   "checks-failed": "checks failed",
   "checks-passed": "checks passed",
   remarks: "new comments",
+  "no-checks": "no checks reported",
   conflicting: "merge conflict",
 };
 
