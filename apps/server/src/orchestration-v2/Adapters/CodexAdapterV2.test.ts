@@ -4951,6 +4951,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         );
         assert.equal(harness.subagentUpdates().at(-1)?.subagent.status, "completed");
         assert.lengthOf(harness.continuationRequests, 1);
+        assert.include(harness.continuationRequests[0]?.detail, "NATIVE_CHILD_16900_DONE");
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
@@ -5098,7 +5099,9 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         });
         assert.isFalse(yield* harness.hasPendingBackgroundWork);
         assert.lengthOf(harness.terminalEvents(), 1);
-        assert.lengthOf(harness.continuationRequests, 0);
+        // The first child turn finished inside the root turn; only the resume wakes it.
+        assert.lengthOf(harness.continuationRequests, 1);
+        assert.include(harness.continuationRequests[0]?.detail, "CODEX_RESUME_DONE");
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
