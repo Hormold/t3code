@@ -1,8 +1,7 @@
-// Wire format of the Codex Micro vendor HID channel (usage page 0xFF00, report 6).
-// Each 64-byte report is [reportId=6, channel, payloadLength, ...payload(<=61)].
-// Channel 2 carries newline-delimited JSON-RPC, channel 1 carries firmware logs.
-// Over USB the vendor channel is its own interface; over Bluetooth LE every
-// collection (keyboard, consumer, mouse, vendor) shares one HID handle.
+// Codex Micro vendor HID channel (usage page 0xFF00): 64-byte reports laid out as
+// [reportId=6, channel, payloadLength, ...payload(<=61)]. Channel 2 carries
+// newline-delimited JSON-RPC, channel 1 firmware logs. Over Bluetooth LE the
+// keyboard, consumer and mouse collections share the same HID handle.
 
 import type { CodexMicroTransport } from "@t3tools/contracts";
 

@@ -256,12 +256,10 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
     yield* refreshStatus;
   });
 
-  // Reconcile the HID topology on every poll, connected or not. A Bluetooth
-  // handle can vanish without a read error (sleep, out of range, a channel
-  // switch), and plugging in the cable flips the device to its USB endpoint,
-  // so follow whichever endpoint is live and prefer USB when both are.
-  // A failing open (usually missing Input Monitoring permission) backs off and
-  // is logged once per distinct error rather than on every poll.
+  // Reconcile on every poll, even while connected: a Bluetooth handle can die
+  // silently (sleep, range, channel switch) and the cable moves the device to
+  // its USB endpoint. A failing open (usually Input Monitoring) backs off and
+  // logs once per distinct error.
   let lastConnectError: string | null = null;
   let retryAt = 0;
   let lastTopology = "";
