@@ -44,6 +44,7 @@ describe("codexMicroSlotStatus", () => {
     expect(codexMicroSlotStatus(thread("a", { hasPendingApprovals: true, runtime: running }))).toBe(
       "needs-input",
     );
+    expect(codexMicroSlotStatus(thread("a", { pendingGuestMessageCount: 1 }))).toBe("needs-input");
     expect(codexMicroSlotStatus(thread("a", { runtime: running }))).toBe("working");
     expect(codexMicroSlotStatus(thread("a"))).toBe("idle");
   });

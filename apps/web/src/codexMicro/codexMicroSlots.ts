@@ -27,6 +27,7 @@ export function codexMicroSlotStatus(thread: SidebarThreadSummary): CodexMicroSl
   switch (resolveSidebarThreadStatus(thread)) {
     case "approval":
     case "input":
+    case "request":
       return "needs-input";
     case "working":
       return "working";
