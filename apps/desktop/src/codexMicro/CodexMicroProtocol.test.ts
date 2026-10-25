@@ -3,8 +3,10 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   decodeReport,
   encodeRpcRequest,
+  findEndpoints,
   LineAssembler,
   parseRpcLine,
+  reconcileEndpoint,
 } from "./CodexMicroProtocol.ts";
 import { lightingFrame } from "./CodexMicroLighting.ts";
 
@@ -31,10 +33,53 @@ describe("Codex Micro protocol", () => {
       channel: 2,
       text: "abc",
     });
-    assert.deepStrictEqual(decodeReport(Uint8Array.from([2, 3, ...payload])), {
-      channel: 2,
-      text: "abc",
-    });
+    const withoutId = new Uint8Array(63);
+    withoutId.set([2, 3, ...payload]);
+    assert.deepStrictEqual(decodeReport(withoutId), { channel: 2, text: "abc" });
+  });
+
+  it("ignores keyboard, consumer and mouse reports sharing a Bluetooth handle", () => {
+    const consumer = new Uint8Array(64);
+    consumer.set([2, 3, 0xe9, 0x00]);
+    assert.isNull(decodeReport(consumer));
+    assert.isNull(decodeReport(Uint8Array.from([1, 0, 0, 4, 0, 0, 0, 0, 0])));
+    assert.isNull(decodeReport(Uint8Array.from([3, 0, 1, 255])));
+  });
+
+  const hid = (path: string, release: number, usagePage = 0xff00) => ({
+    path,
+    vendorId: 0x303a,
+    productId: 0x8360,
+    usagePage,
+    release,
+  });
+
+  it("finds vendor endpoints and prefers USB over Bluetooth", () => {
+    assert.deepStrictEqual(
+      findEndpoints([
+        hid("ble", 177),
+        hid("kbd", 176, 1),
+        hid("usb", 176),
+        { ...hid("x", 0), productId: 1 },
+      ]),
+      [
+        { path: "usb", transport: "usb" },
+        { path: "ble", transport: "bluetooth" },
+      ],
+    );
+  });
+
+  it("follows the live endpoint and hands off to USB", () => {
+    const usb = { path: "usb", transport: "usb" } as const;
+    const ble = { path: "ble", transport: "bluetooth" } as const;
+    assert.deepStrictEqual(reconcileEndpoint(null, []), { keep: false, next: null });
+    assert.deepStrictEqual(reconcileEndpoint(null, [ble]), { keep: false, next: ble });
+    assert.deepStrictEqual(reconcileEndpoint(ble, [ble]), { keep: true });
+    assert.deepStrictEqual(reconcileEndpoint(ble, [usb, ble]), { keep: false, next: usb });
+    assert.deepStrictEqual(reconcileEndpoint(usb, [usb, ble]), { keep: true });
+    // Unplugging the cable (or a new pairing handle after sleep) moves to what is left.
+    assert.deepStrictEqual(reconcileEndpoint(usb, [ble]), { keep: false, next: ble });
+    assert.deepStrictEqual(reconcileEndpoint(ble, []), { keep: false, next: null });
   });
 
   it("parses responses and abbreviated notifications", () => {

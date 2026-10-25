@@ -1,10 +1,14 @@
 // Wire format of the Codex Micro vendor HID channel (usage page 0xFF00, report 6).
 // Each 64-byte report is [reportId=6, channel, payloadLength, ...payload(<=61)].
 // Channel 2 carries newline-delimited JSON-RPC, channel 1 carries firmware logs.
+// Over USB the vendor channel is its own interface; over Bluetooth LE every
+// collection (keyboard, consumer, mouse, vendor) shares one HID handle.
 
-export const WORK_LOUDER_VENDOR_ID = 0x303a;
-export const CODEX_MICRO_PRODUCT_ID = 0x8360;
-export const VENDOR_USAGE_PAGE = 0xff00;
+import type { CodexMicroTransport } from "@t3tools/contracts";
+
+const WORK_LOUDER_VENDOR_ID = 0x303a;
+const CODEX_MICRO_PRODUCT_ID = 0x8360;
+const VENDOR_USAGE_PAGE = 0xff00;
 
 const REPORT_ID = 6;
 const REPORT_SIZE = 64;
@@ -50,9 +54,14 @@ export interface DecodedReport {
   readonly text: string;
 }
 
-/** Input reports arrive with or without the report id depending on the OS backend. */
+/**
+ * Input reports arrive with or without the report id depending on the OS
+ * backend. A full-size report that starts with another id is keyboard, mouse
+ * or consumer input sharing the handle (Bluetooth), not vendor traffic.
+ */
 export function decodeReport(data: Uint8Array): DecodedReport | null {
-  const base = data[0] === REPORT_ID ? 1 : 0;
+  const base = data[0] === REPORT_ID ? 1 : data.length === REPORT_SIZE - 1 ? 0 : -1;
+  if (base < 0) return null;
   const channel = data[base];
   const length = data[base + 1];
   if (channel === undefined || length === undefined || length > MAX_PAYLOAD) return null;
@@ -60,6 +69,58 @@ export function decodeReport(data: Uint8Array): DecodedReport | null {
     channel,
     text: new TextDecoder().decode(data.subarray(base + 2, base + 2 + length)),
   };
+}
+
+export interface HidCandidate {
+  readonly path?: string | undefined;
+  readonly vendorId: number;
+  readonly productId: number;
+  readonly usagePage?: number | undefined;
+  readonly release: number;
+}
+
+export interface CodexMicroEndpoint {
+  readonly path: string;
+  readonly transport: CodexMicroTransport;
+}
+
+/** The firmware sets the low two bits of bcdDevice for wireless links. */
+const transportOf = (device: HidCandidate): CodexMicroTransport =>
+  device.release % 4 === 0 ? "usb" : "bluetooth";
+
+/** Every reachable vendor endpoint, USB first: a cable is faster and never sleeps. */
+export function findEndpoints(devices: ReadonlyArray<HidCandidate>): CodexMicroEndpoint[] {
+  return devices
+    .flatMap((device) =>
+      device.path &&
+      device.vendorId === WORK_LOUDER_VENDOR_ID &&
+      device.productId === CODEX_MICRO_PRODUCT_ID &&
+      device.usagePage === VENDOR_USAGE_PAGE
+        ? [{ path: device.path, transport: transportOf(device) }]
+        : [],
+    )
+    .toSorted(
+      (left, right) => Number(right.transport === "usb") - Number(left.transport === "usb"),
+    );
+}
+
+/**
+ * Keeps the open endpoint while it is still listed and nothing better is,
+ * otherwise names the endpoint to move to (or `null` when the device is gone).
+ */
+export function reconcileEndpoint(
+  current: CodexMicroEndpoint | null,
+  available: ReadonlyArray<CodexMicroEndpoint>,
+): { readonly keep: true } | { readonly keep: false; readonly next: CodexMicroEndpoint | null } {
+  const best = available[0] ?? null;
+  if (
+    current &&
+    available.some((endpoint) => endpoint.path === current.path) &&
+    (current.transport === "usb" || best?.transport !== "usb")
+  ) {
+    return { keep: true };
+  }
+  return { keep: false, next: best };
 }
 
 /** Reassembles newline-delimited lines per channel. */

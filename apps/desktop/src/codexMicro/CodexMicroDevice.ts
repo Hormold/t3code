@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -5,7 +6,7 @@ import * as Random from "effect/Random";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { devicesAsync as listHidDevices, HIDAsync } from "node-hid";
+import type { HIDAsync } from "node-hid";
 
 import {
   DISCONNECTED_CODEX_MICRO_STATE,
@@ -16,17 +17,17 @@ import {
 
 import {
   CHANNEL_RPC,
-  CODEX_MICRO_PRODUCT_ID,
+  type CodexMicroEndpoint,
   decodeReport,
   encodeRpcRequest,
+  findEndpoints,
   isDeepEqual,
   LineAssembler,
   MAX_RPC_ID,
   NOTIFY_METHODS,
   parseRpcLine,
+  reconcileEndpoint,
   RPC_METHODS,
-  VENDOR_USAGE_PAGE,
-  WORK_LOUDER_VENDOR_ID,
 } from "./CodexMicroProtocol.ts";
 import { lightingFrame } from "./CodexMicroLighting.ts";
 
@@ -42,20 +43,26 @@ export interface CodexMicroDevice {
   readonly setLighting: (lighting: CodexMicroLighting) => Effect.Effect<void>;
 }
 
+// A failed open waits this long before retrying, unless the topology changes.
+const RETRY_AFTER_FAILURE_MS = 10_000;
+
+// node-hid is a native addon: load it on first use so a broken prebuild can
+// only disable the Codex Micro, never stop the desktop app from starting.
+let nodeHid: Promise<typeof import("node-hid")> | null = null;
+const loadNodeHid = Effect.tryPromise({
+  try: () => (nodeHid ??= import("node-hid")),
+  catch: (cause) => new CodexMicroError({ message: "Could not load node-hid", cause }),
+});
+
 // Enumeration is async so polling never blocks the main process.
-const findDevicePath = Effect.tryPromise({
-  try: () => listHidDevices(),
-  catch: (cause) => new CodexMicroError({ message: "Could not list HID devices", cause }),
-}).pipe(
-  Effect.map(
-    (devices) =>
-      devices.find(
-        (device) =>
-          device.vendorId === WORK_LOUDER_VENDOR_ID &&
-          device.productId === CODEX_MICRO_PRODUCT_ID &&
-          device.usagePage === VENDOR_USAGE_PAGE,
-      )?.path ?? null,
+const listEndpoints = loadNodeHid.pipe(
+  Effect.flatMap((hidModule) =>
+    Effect.tryPromise({
+      try: () => hidModule.devicesAsync(),
+      catch: (cause) => new CodexMicroError({ message: "Could not list HID devices", cause }),
+    }),
   ),
+  Effect.map(findEndpoints),
 );
 
 /**
@@ -72,6 +79,7 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
   const pending = new Map<string, Deferred.Deferred<unknown, CodexMicroError>>();
 
   let hid: HIDAsync | null = null;
+  let endpoint: CodexMicroEndpoint | null = null;
   let state: CodexMicroDeviceState = DISCONNECTED_CODEX_MICRO_STATE;
   let lighting: CodexMicroLighting | null = null;
   let lightsOff = false;
@@ -191,12 +199,20 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
     const device = hid;
     consecutiveFailures = 0;
     hid = null;
+    endpoint = null;
     lines.reset();
     for (const response of pending.values()) {
       yield* Deferred.fail(response, new CodexMicroError({ message: "Codex Micro disconnected" }));
     }
     pending.clear();
-    if (device) yield* Effect.promise(() => device.close()).pipe(Effect.ignore);
+    if (device) {
+      // An unplugged or out-of-range device can reject close(); it must not
+      // stop the disconnected state from reaching the renderer.
+      yield* Effect.tryPromise({
+        try: () => device.close(),
+        catch: (cause) => new CodexMicroError({ message: "Could not close Codex Micro", cause }),
+      }).pipe(Effect.ignore);
+    }
     setState(DISCONNECTED_CODEX_MICRO_STATE);
   });
 
@@ -204,16 +220,19 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
     const status = (yield* call(RPC_METHODS.status, null)) as Record<string, unknown> | null;
     setState({
       connected: true,
+      transport: endpoint?.transport ?? null,
       firmwareVersion: typeof status?.version === "string" ? status.version : null,
       batteryPercentage: typeof status?.battery === "number" ? status.battery : null,
       charging: typeof status?.is_charging === "boolean" ? status.is_charging : null,
     });
   }).pipe(Effect.catch((error) => Effect.logWarning("Codex Micro status request failed", error)));
 
-  const connect = Effect.fn("desktop.codexMicro.connect")(function* (path: string) {
-    // Non-exclusive so the keyboard and consumer interfaces keep working (macOS).
+  const connect = Effect.fn("desktop.codexMicro.connect")(function* (next: CodexMicroEndpoint) {
+    const { HIDAsync } = yield* loadNodeHid;
+    // Non-exclusive so the keyboard and consumer collections keep working:
+    // over Bluetooth they share this very handle (macOS).
     const device = yield* Effect.tryPromise({
-      try: () => HIDAsync.open(path, { nonExclusive: true }),
+      try: () => HIDAsync.open(next.path, { nonExclusive: true }),
       catch: (cause) => new CodexMicroError({ message: "Could not open Codex Micro", cause }),
     });
     device.on("data", onData);
@@ -224,22 +243,38 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
       );
     });
     hid = device;
+    endpoint = next;
     appliedFrame = null;
-    setState({ ...DISCONNECTED_CODEX_MICRO_STATE, connected: true });
+    setState({ ...DISCONNECTED_CODEX_MICRO_STATE, connected: true, transport: next.transport });
     wake();
     yield* applyLighting;
     yield* refreshStatus;
   });
 
-  // Poll for the device while disconnected; refresh battery while connected.
-  // A failing open (usually missing Input Monitoring permission) is logged once
-  // per distinct error rather than on every poll.
+  // Reconcile the HID topology on every poll, connected or not. A Bluetooth
+  // handle can vanish without a read error (sleep, out of range, a channel
+  // switch), and plugging in the cable flips the device to its USB endpoint,
+  // so follow whichever endpoint is live and prefer USB when both are.
+  // A failing open (usually missing Input Monitoring permission) backs off and
+  // is logged once per distinct error rather than on every poll.
   let lastConnectError: string | null = null;
+  let retryAt = 0;
+  let lastTopology = "";
   yield* Effect.gen(function* () {
-    if (hid) return;
-    const path = yield* findDevicePath;
-    if (!path) return;
-    yield* connect(path);
+    const available = yield* listEndpoints;
+    const topology = available.map((candidate) => candidate.path).join("\n");
+    if (topology !== lastTopology) {
+      lastTopology = topology;
+      retryAt = 0;
+    }
+    const plan = reconcileEndpoint(hid ? endpoint : null, available);
+    if (plan.keep) return;
+    if (hid) yield* disconnect;
+    const now = yield* Clock.currentTimeMillis;
+    if (!plan.next || now < retryAt) return;
+    yield* connect(plan.next).pipe(
+      Effect.tapError(() => Effect.sync(() => (retryAt = now + RETRY_AFTER_FAILURE_MS))),
+    );
     lastConnectError = null;
   }).pipe(
     Effect.catch((error) => {

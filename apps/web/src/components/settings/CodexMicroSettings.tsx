@@ -150,7 +150,7 @@ function OptionMenu<T>(props: {
           onValueChange={(next) => props.onChange(props.options[Number(next)]!.value)}
         >
           {props.options.map((option, i) => (
-            <MenuRadioItem key={option.label} closeOnClick value={String(i)}>
+            <MenuRadioItem key={`${i}:${option.label}`} closeOnClick value={String(i)}>
               {option.label}
             </MenuRadioItem>
           ))}
@@ -296,9 +296,16 @@ export function CodexMicroSettingsPanel() {
       <SettingsSection id="codex-micro-device" title="Device">
         <SettingsRow
           title="Codex Micro"
-          description={
-            device.firmwareVersion ? `Connected, firmware ${device.firmwareVersion}` : "Connected"
-          }
+          description={[
+            device.transport === "bluetooth"
+              ? "Connected over Bluetooth"
+              : device.transport === "usb"
+                ? "Connected over USB"
+                : "Connected",
+            device.firmwareVersion ? `firmware ${device.firmwareVersion}` : null,
+          ]
+            .filter(Boolean)
+            .join(", ")}
           control={
             battery ? <span className="text-sm text-muted-foreground">{battery}</span> : null
           }

@@ -4,7 +4,12 @@ The Work Louder Codex Micro is a desk controller with six agent keys, seven comm
 and an analog stick. In the desktop app, the agent keys follow your threads and light up with
 their state, and the other controls run T3 Code commands.
 
-Connect it over USB-C or Bluetooth. **Settings** > **Codex Micro** appears while it is connected.
+Connect it over USB-C or Bluetooth. **Settings** > **Codex Micro** appears while it is connected
+and shows which link is in use.
+
+Pair it in your system's Bluetooth settings like any keyboard. Plugging in the cable switches the
+Micro to wired mode and T3 Code moves over with it; after the Micro sleeps or drops its Bluetooth
+link, T3 Code reconnects once it is back.
 
 ## Agent keys
 
@@ -36,5 +41,7 @@ Any of these can run another command. A command uses its current keybinding, so 
 
 - **macOS:** T3 Code needs Input Monitoring. Allow T3 Code in **System Settings** > **Privacy &
   Security** > **Input Monitoring** and reconnect the device.
+- **Other input tools:** apps that also watch input devices, such as Karabiner-Elements or Logi
+  Options+, can get in the way of the connection. Quit them to check.
 - **Linux:** your user needs access to the device's hidraw node, usually through a udev rule for
   vendor `303a`, product `8360`.

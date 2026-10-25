@@ -169,8 +169,12 @@ export const CodexMicroSettings = Schema.Unknown.pipe(
 );
 export type CodexMicroSettings = typeof CodexMicroSettings.Type;
 
+export const CodexMicroTransport = Schema.Literals(["usb", "bluetooth"]);
+export type CodexMicroTransport = typeof CodexMicroTransport.Type;
+
 export const CodexMicroDeviceState = Schema.Struct({
   connected: Schema.Boolean,
+  transport: Schema.NullOr(CodexMicroTransport),
   firmwareVersion: Schema.NullOr(Schema.String),
   batteryPercentage: Schema.NullOr(Schema.Number),
   charging: Schema.NullOr(Schema.Boolean),
@@ -179,6 +183,7 @@ export type CodexMicroDeviceState = typeof CodexMicroDeviceState.Type;
 
 export const DISCONNECTED_CODEX_MICRO_STATE: CodexMicroDeviceState = {
   connected: false,
+  transport: null,
   firmwareVersion: null,
   batteryPercentage: null,
   charging: null,

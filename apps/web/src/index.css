@@ -2521,20 +2521,20 @@ code {
   --micro-shadow-knob: inset 0 -1px 2px rgb(92 84 72 / 16%), 0 1px 2px rgb(89 80 67 / 18%);
   --micro-shadow-stick: inset 0 -1px 2px rgb(255 255 255 / 12%), 0 1px 2px rgb(44 40 35 / 28%);
   --micro-shadow-dot: 0 0 5px rgb(87 76 151 / 42%);
-}
 
-.dark {
-  --micro-body: #18191e;
-  --micro-cap: #202127;
-  --micro-knob: #262831;
-  --micro-stick-housing: #23252c;
-  --micro-touch: #202127;
-  --micro-dot: rgb(129 119 200 / 90%);
-  --micro-shadow-body: inset 0 0 0 1px rgb(255 255 255 / 8%), 0 1px 0 rgb(0 0 0 / 28%);
-  --micro-shadow-cap: inset 0 0 0 1px rgb(255 255 255 / 8%), 0 1px 2px rgb(0 0 0 / 32%);
-  --micro-shadow-agent:
-    inset 0 0 0 1px rgb(255 255 255 / 9%), inset 0 1px 2px rgb(255 255 255 / 8%),
-    0 1px 2px rgb(0 0 0 / 30%);
-  --micro-shadow-knob: inset 0 -1px 2px rgb(255 255 255 / 8%), 0 1px 2px rgb(0 0 0 / 34%);
-  --micro-shadow-dot: 0 0 6px rgb(118 104 197 / 50%);
+  @variant dark {
+    --micro-body: #18191e;
+    --micro-cap: #202127;
+    --micro-knob: #262831;
+    --micro-stick-housing: #23252c;
+    --micro-touch: #202127;
+    --micro-dot: rgb(129 119 200 / 90%);
+    --micro-shadow-body: inset 0 0 0 1px rgb(255 255 255 / 8%), 0 1px 0 rgb(0 0 0 / 28%);
+    --micro-shadow-cap: inset 0 0 0 1px rgb(255 255 255 / 8%), 0 1px 2px rgb(0 0 0 / 32%);
+    --micro-shadow-agent:
+      inset 0 0 0 1px rgb(255 255 255 / 9%), inset 0 1px 2px rgb(255 255 255 / 8%),
+      0 1px 2px rgb(0 0 0 / 30%);
+    --micro-shadow-knob: inset 0 -1px 2px rgb(255 255 255 / 8%), 0 1px 2px rgb(0 0 0 / 34%);
+    --micro-shadow-dot: 0 0 6px rgb(118 104 197 / 50%);
+  }
 }

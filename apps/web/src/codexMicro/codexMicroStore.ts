@@ -55,8 +55,11 @@ function handleInput(input: CodexMicroInputEvent) {
 function connectBridge() {
   const codexMicro = bridge();
   if (!codexMicro || unsubscribeBridge) return;
+  // A state event can land before the initial getState() reply; the event is newer.
+  let receivedStateEvent = false;
   unsubscribeBridge = codexMicro.onEvent((event) => {
     if (event.type === "state") {
+      receivedStateEvent = true;
       update({
         loaded: true,
         device: event.state,
@@ -66,7 +69,9 @@ function connectBridge() {
       handleInput(event.input);
     }
   });
-  void codexMicro.getState().then((device) => update({ loaded: true, device }));
+  void codexMicro.getState().then((device) => {
+    if (!receivedStateEvent) update({ loaded: true, device });
+  });
 }
 
 function subscribe(listener: () => void) {
