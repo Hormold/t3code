@@ -138,6 +138,7 @@ function OptionMenu<T>(props: {
   return (
     <Menu>
       <MenuTrigger
+        data-codex-micro-trigger
         aria-label={props.label}
         render={<SelectButton size="sm" />}
         className="w-auto min-w-0"
@@ -269,11 +270,9 @@ export function CodexMicroSettingsPanel() {
           onAgentKey={(index) => openRowMenu(agentRowId(index))}
           onControl={(control) =>
             openRowMenu(
-              control.startsWith("JOY")
-                ? controlRowId(control)
-                : control.startsWith("ENC")
-                  ? "codex-micro-knob"
-                  : controlRowId(control),
+              control === "ENC" && settings.knobMode !== "custom"
+                ? "codex-micro-knob-mode"
+                : controlRowId(control),
             )
           }
         />
@@ -393,6 +392,7 @@ export function CodexMicroSettingsPanel() {
 
       <SettingsSection id="codex-micro-knob" title="Knob">
         <SettingsRow
+          id="codex-micro-knob-mode"
           title="Mode"
           description={KNOB_MODES.find((mode) => mode.value === settings.knobMode)?.description}
           control={

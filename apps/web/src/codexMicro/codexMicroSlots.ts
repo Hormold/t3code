@@ -109,11 +109,14 @@ export function assignCodexMicroSlots(input: {
   readonly now: string;
 }): CodexMicroSlot[] {
   const byId = new Map(input.threads.map((thread) => [thread.id as string, thread]));
+  // A thread pinned to two keys keeps only the first.
+  const pinned = new Set<string>();
   const pins = Array.from({ length: CODEX_MICRO_SLOT_COUNT }, (_, index) => {
     const id = input.pinnedThreads[index] ?? null;
-    return id !== null && byId.has(id) ? id : null;
+    if (id === null || !byId.has(id) || pinned.has(id)) return null;
+    pinned.add(id);
+    return id;
   });
-  const pinned = new Set(pins.filter((id): id is string => id !== null));
   const ranked = rank(input.threads, input.mode, input.now).filter(
     (thread) => !pinned.has(thread.id),
   );

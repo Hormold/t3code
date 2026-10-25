@@ -89,4 +89,13 @@ describe("assignCodexMicroSlots", () => {
     const pinned = assign(threads, { pinnedThreads: [null, null, null, null, null, "new"] });
     expect(pinned[5]?.threadId).toBe("new");
   });
+
+  it("gives a thread pinned to two keys only the first", () => {
+    const threads = ["a", "b", "c", "d", "e", "f"].map((id) => thread(id));
+    const slots = assign(threads, { pinnedThreads: ["a", "a", null, null, null, null] });
+    expect(slots[0]?.threadId).toBe("a");
+    expect(new Set(slots.map((slot) => slot.threadId))).toEqual(
+      new Set(["a", "b", "c", "d", "e", "f"]),
+    );
+  });
 });

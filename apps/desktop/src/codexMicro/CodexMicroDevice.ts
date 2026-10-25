@@ -95,7 +95,7 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
   const send = Effect.fn("desktop.codexMicro.send")(function* (method: string, params: unknown) {
     const device = hid;
     if (!device) return yield* new CodexMicroError({ message: "Codex Micro is not connected" });
-    const id = yield* Random.nextIntBetween(0, MAX_RPC_ID);
+    const id = yield* Random.nextIntBetween(0, MAX_RPC_ID, { halfOpen: true });
     const response = yield* Deferred.make<unknown, CodexMicroError>();
     pending.set(String(id), response);
     return yield* Effect.gen(function* () {
@@ -183,14 +183,19 @@ export const makeCodexMicroDevice = Effect.fn("desktop.codexMicro.makeDevice")(f
         continue;
       }
       const { method, params } = message;
-      if (method === NOTIFY_METHODS.key) {
+      if (method === NOTIFY_METHODS.key && typeof params.k === "string") {
         wake();
         const act = typeof params.act === "number" ? params.act : null;
-        onEvent({ type: "input", input: { type: "key", key: String(params.k), act } });
-      } else if (method === NOTIFY_METHODS.joystick) {
-        const distance = Number(params.d);
+        onEvent({ type: "input", input: { type: "key", key: params.k, act } });
+      } else if (
+        method === NOTIFY_METHODS.joystick &&
+        Number.isFinite(params.a) &&
+        Number.isFinite(params.d)
+      ) {
+        const angle = params.a as number;
+        const distance = params.d as number;
         if (distance > 0.1) wake();
-        onEvent({ type: "input", input: { type: "joystick", angle: Number(params.a), distance } });
+        onEvent({ type: "input", input: { type: "joystick", angle, distance } });
       }
     }
   };
